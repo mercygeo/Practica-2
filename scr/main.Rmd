@@ -1,0 +1,299 @@
+---
+title: "PrÃ¡ctica 2"
+author: "Mercy Pinargote"
+date: "June 4, 2018"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduccion
+El objetivo de esta actividad es realizar el tratamiento de un dataset, se ha escogido el dataset: 
+Predict Future Sales (https://www.kaggle.com/c/competitive-data-sciencepredict-future-sales/
+
+Se va a realizar un análisis de datos exploratorios, la utlizacion de funciones básicas y avanzadas y el preprocesamiento, diversas técnicas de validación de modelos. 
+
+
+## 1. Descripción del dataset. ¿Por qué es importante y qué pregunta/problema pretende responder? 
+
+El conjunto de datos contiene informacion histórica de ventas diarias de la empresa de software 1C que es una de las más grandes de Rusia. La tarea es predecir la cantidad total de productos vendidos en cada tienda para el próximo mes. El conjunto de datos está constituido por 6 columnas y contiene 2.935.849 registros.
+
+Es interesante para las personas que quieran mejorar sus habilidades en ciencia de datos y participar en competencias ya que las competiciones se convierten en una oportunidad única para aprender y competir con otros.
+
+sales_train.csv - el conjunto de entrenamiento. Datos históricos diarios de enero de 2013 a octubre de 2015
+
+Descripcion del conjunto de datos
+
+date - fecha en formato dd / mm / aaaa
+date_block_num - un número de mes consecutivo, utilizado por conveniencia. Enero de 2013 es 0, febrero de 2013 es 1, ..., octubre de 2015 es 33
+shop_id - identificador único de una tienda
+item_id - identificador único de un producto
+item_price - precio actual de un artículo
+item_cnt_day - número de productos vendidos.
+
+La competencia requiere generar un conjunto de datos con la siguiente estructura
+
+ID: un Id que representa una tupla (tienda, Artículo) dentro del conjunto de prueba
+item_cnt_month - prediccion del número de productos vendidos mensuales
+
+## 2.Integración y selección de los datos de interés a analizar.
+
+La competencia plantea seleccionar cuales son las variables que pueden ayudarnos a pronosticar las ventas del proximo mes. Además, se podrá proceder a crear modelos de reglas de asociacion que permitan pronosticar las ventas del proximo mes por tienda y producto en funcion del historico de datos.
+
+## 3. Limpieza de los datos
+
+Antes de comenzar con la limpieza de los datos, procedemos a realizar la lectura del fichero
+en formato CSV en el que se encuentran. El resultado devuelto por la llamada a la función
+read.csv() será un objeto data.frame:
+```{r}
+# Lectura de datos
+sales_train_v2 <- read.csv("C:/MERCY UOC/Tipologia y Ciclo de los Datos/Practica/Data/sales_train_v2.csv")
+str(sales_train_v2)
+```
+De estas variables nos interesa utilizar:
+date_block_num 
+shop_id 
+item_id 
+item_cnt_day
+Las otras variables no aportan para el estudio que se va a realizar
+
+Se va a realizar estadística descriptiva utilizando la funcion summary() que nos muestra los valores de la media, mediana, 25 y 75 cuartiles, mín. y máx de todas las variables numericas en el conjunto de datos.
+
+```{r}
+summary(sales_train_v2$item_cnt_day)
+
+```
+
+Se identifica que existen valores negativos en la variable item_cnt_day estos valores vamos a utilizarlos para el estudio, en este caso los valores negativos se van a considerar como devoluciones de productos por lo que no se va a realizar modificacion a estos valores ni descartar. 
+
+Adicional se observa que la media tiene un valor superior a la mediana. Por lo que se podria decir que existen valores extremos. Para comprobar esto mas adelante se va a realizar el estudio de valores extremos.
+
+### 3.1. Ceros y elementos vacíos
+En R, los valores faltantes están representados por el símbolo NA (no disponible). Para verificar si existen elementos vacios se va a a utilizar la funcion is.na().
+```{r}
+# Números de valores desconocidos por campo
+sapply(sales_train_v2, function(x) sum(is.na(x)))
+```
+
+El resultado muestra que no existen campos con valores vacios.
+### 3.2. Valores extremos
+
+Un valor más extremo (outlier) es un valor en un conjunto de datos que es muy diferente de los otros valores. Para identificar los valores extremos se va a realizar un grafico de cajas con la funcion boxplot.
+```{r}
+
+boxplot(sales_train_v2$item_cnt_day ~ sales_train_v2$shop_id, main="Valores extremos", 
+          xlab="Shop Id",
+          ylab="Item Count Day",
+          col="orange",
+          border="brown")
+```
+Mediante el grafico se puede observar la presencia de valores extremos. Se va a modificar los valor extremos
+para cada tienda.
+
+```{r}
+ids <-unique(sales_train_v2$shop_id)
+for (i in ids) {
+  outlier_values <- boxplot.stats(sales_train_v2[which(sales_train_v2$shop_id==i & sales_train_v2$item_cnt_day>-1 ),]$item_cnt_day)$out  # outliers 
+  # Reemplazar outlider con NA 
+  sales_train_v2[which(sales_train_v2$shop_id==i),]$item_cnt_day <- ifelse(sales_train_v2[which(sales_train_v2$shop_id==i),]$item_cnt_day %in% outlier_values, NA, sales_train_v2$item_cnt_day)
+  # Imputar valores NA con la media
+  sales_train_v2$item_cnt_day[is.na(sales_train_v2[which(sales_train_v2$shop_id==i),]$item_cnt_day)] <-mean(sales_train_v2[which(sales_train_v2$shop_id==i),] $item_cnt_day,na.rm=T)
+}
+```
+Grafica sin valores extremos
+```{r}
+boxplot(item_cnt_day ~ shop_id, main="Data sin valores extremos", data=sales_train_v2,
+          xlab="Shop Id",
+          ylab="Item Count Day",
+          col="orange",
+          border="brown")
+```
+
+Finalmente se van a agregar los datos para continuar con el analisis de los datos
+
+### 3.3. Agregracion de datos
+
+```{r}
+library(sqldf)
+ sales_train_v2_sum <- sqldf('SELECT date_block_num, shop_id, item_id, SUM(item_cnt_day) AS item_cnt_month FROM sales_train_v2 GROUP BY date_block_num, shop_id, item_id')
+tail(sales_train_v2_sum)
+```
+
+### 3.4. Cambio de datos tipo numero a factor
+Se utiliza la funcion str() para verificar el tipo de datos de las variables del conjunto de datos que se va a utilizar para el analisis de datos
+```{r}
+str(sales_train_v2_sum)
+```
+Se puede observar que la variable date_block_num es de tipo numero y lo vamos a convertir a tipo factor
+
+```{r}
+sales_train_v2_sum$date_block_num <- factor(sales_train_v2_sum$date_block_num )
+```
+
+
+
+## 4. Análisis de los datos
+### 4.1. Selección de los grupos de datos que se quieren analizar/comparar
+
+Se van a utilizar las variables: shop_id, item_id y item_cnt_month
+
+### 4.2. Comprobación de la normalidad y homogeneidad de la varianza
+
+Para la comprobación de la normalidad se va a utilizar la prueba de Anderson Darling para este caso porque es un conjunto grande de datos.
+
+```{r}
+
+library(nortest)
+ad.test(sales_train_v2_sum$item_cnt_month)$p.value
+hist(sales_train_v2_sum$item_cnt_month)
+```
+
+El resultado de la prueba y el histograma indican que los datos no siguen una distribucion normal ya que valor p es inferior al coeficiente 0.05. Y el grafico del histograma muestra que no es una distribucion normal.
+
+```{r}
+qqnorm(sales_train_v2_sum$item_cnt_month,main= "Normal Q-Q ")
+qqline(sales_train_v2_sum$item_cnt_month , col="red" )
+
+```
+
+Para estudiar la homogeneidad de varianzas se va a utilizar la prueba de Fligner-Killeen porque en este caso los datos se desvían de la normal. En este caso, estudiaremos esta homogeneidad en cuanto a
+los grupos conformados por las tiendas de la cadena.
+
+```{r}
+fligner.test(item_cnt_month ~ shop_id, data = sales_train_v2_sum)
+
+```
+
+Como el p-valor es menor a 0,05, rechazamos la hipótesis de que las varianzas de las muestras son homogéneas.
+
+### 4.3. Aplicación de pruebas estadísticas para comparar los grupos de datos.
+
+En función de los datos y el objetivo del estudio, aplicar pruebas de contraste
+de hipótesis, correlaciones, regresiones, etc.
+
+#### 4.3.1 Contraste entre meses
+Se puede contrastar si las ventas de la cadena han aumentado durante los ultimos dos meses. Se puede verificar si se puede afirmar que con un nivel de confianza del 90% las ventas han aumentado los ultimos dos meses. 
+Para hacer esto se puede utilizar un contraste de hipótesis de una muestra de datos apareados, tal como se describe en Rovira (2009) (p.21). Se trata de un contraste unilateral.
+Hipotesis nula y alternativa
+
+H0:μ32=μ33
+H1:μ33>μ32 
+
+o de forma equivalente:
+
+H0:dif=0 
+H1:dif>0 
+donde “dif” es la muestra de las diferencias entre los meses 32 y 33
+
+```{r}
+
+sales_train_v2_test <- subset(sales_train_v2_sum, date_block_num == 33 | date_block_num ==32)
+var.test(item_cnt_month ~ date_block_num, data = sales_train_v2_test)
+
+```
+
+El valor p del contraste unilateral es 2.2e-16. Es un valor inferior al 0.10 establecido con un 90% de nivel de confianza. Por tanto, se puede rechazar la hipótesis nula de que las ventas entre los meses 32 y 33 son las mismas.
+
+
+### 4.3.2 Contrastes entre categoria de productos 
+Se puede contrastar si los productos que pertenecen a las categorias consolas (“15 xbox 360” y “16 xbox one”) tienen un nivel de ventas superior al resto de categorias de la muestra, con un nivel de confianza del 97%. 
+
+Lo primero que se va a realizar es la preparacion de datos, se va a cargar el conjunto de datos de categorias y se va a hacer un merge con los datos de ventas
+```{r}
+# Lectura de datos
+item_categories <- read.csv("C:/MERCY UOC/Tipologia y Ciclo de los Datos/Practica/Data/category.txt")
+# Merge de datos
+sales_train_v2_sum <- merge( sales_train_v2_sum,  item_categories)
+```
+Ahora se van a crear dos data frames que contengan por separado las ventas de productos que pertenecen a las categorias de consolas mencionadas y por otra parte, el resto de productos de la muestra, con un nivel de confianza del 97%. 
+
+```{r}
+
+Consolas <- sales_train_v2_sum[which(sales_train_v2_sum$category==15 | sales_train_v2_sum$category==16),]
+noConsolas <- sales_train_v2_sum[which(sales_train_v2_sum$category!=15 & sales_train_v2_sum$category!=16),]
+
+```
+Hipotesis nula
+H0:μConsolas=μnonConsolas
+H1:μConsolas>μnonConsolas
+
+Se va aplicar un contraste de dos muestras sobre la diferencia de medias. Se aplica el caso de muestras grandes no normales, según Gibergans Baguena (2009) (p.9). Es un contraste unilateral.
+
+
+```{r}
+t.test(x = Consolas$item_cnt_month,
+       y = noConsolas$item_cnt_month,
+       alternative = "two.sided", mu = 0, var.equal = TRUE, conf.level = 0.97)
+rm(Consolas)    
+rm(noConsolas)    
+```
+
+Como el valor p=0.02545 es inferior a α=0.03, notablemente inferior a α=0.03, podemos rechazar la hipótesis nula de que las ventas mensuales entre estas dos categorias son iguales a favor de la hipótesis alternativa.  
+
+
+### 4.3.3 Modelo de regresión lineal
+
+El problema plantea que se debe pronosticar las ventas por tienda y producto, por lo que primero se 
+va a crear una tupla utilizando las variables shop_id y item_id.
+
+```{r}
+#2. Asignar ID unico para tienda y producto
+sales_train_v2_sum <- sales_train_v2_sum[order(sales_train_v2_sum$shop_id, sales_train_v2_sum$item_id),] 
+sales_train_v2_sum$ID <- cumsum(!duplicated(sales_train_v2_sum[3:4])) 
+#sales_train_v2_clean <- sales_train_v2_sum[!duplicated(sales_train_v2_sum$ID), ] 
+
+summary(sales_train_v2_sum)
+```
+Se va aplicar un modelo de regresion lineal para calcular las ventas futuras. Primero se va a evaluar 
+
+Primero se va a crear dos datasets para entrenamiento y pruebas
+
+```{r}
+rowstrain <- nrow(sales_train_v2_sum)*0.8
+set.seed(100000)
+index <-sample(1:nrow(sales_train_v2_sum),size=rowstrain)
+
+train <- sales_train_v2_sum[index,]
+test <- sales_train_v2_sum[-index,]
+```
+
+
+```{r}
+modelo1 <- lm(item_cnt_month ~  ID + category, data = train)
+modelo2 <- lm(item_cnt_month ~  ID, data = train)
+
+tabla.coeficientes <- matrix(c(1, summary(modelo1)$r.squared,
+2, summary(modelo2)$r.squared),
+ncol = 2, byrow = TRUE)
+colnames(tabla.coeficientes) <- c("Modelo", "R^2")
+tabla.coeficientes
+
+```
+
+Se va a utilizar el segundo modelo porque tiene un mayor coeficiente de determinación. 
+```{r}
+predict_mo <- predict(modelo2, test, type="response")
+mc_sl<-data.frame(real=test$item_cnt_month, predicted=predict_mo, dif=ifelse(test$item_cnt_month>predict_mo, -predict_mo*100/test$item_cnt_month, predict_mo*100/test$predict_mo))
+colnames(mc_sl)<- c("Real", "Predecido", "Dif%")
+tail(mc_sl)
+```
+
+Finalmente se va a utilizar el conjunto de datos de Kagle para realizar la prediccion solicitada en la competencia y generar el conjunto de datos para Kagle
+
+```{r}
+library(dplyr)
+train <- sales_train_v2_sum[,c("shop_id","item_id","item_cnt_month")]
+test <- read.csv("C:/MERCY UOC/Tipologia y Ciclo de los Datos/Practica/Data/test.csv")
+train <-inner_join(train,test)
+
+modelo <- lm(item_cnt_month ~  ID , data = train)
+predict_mo <- predict(modelo, test, type="response")
+
+resultado <-data.frame(ID=test$ID, item_cnt_month=predict_mo)
+resultado <- unique(resultado)
+write.csv(resultado, file = "C:/MERCY UOC/Tipologia y Ciclo de los Datos/Practica/Data/Resultado.csv",row.names=FALSE)
+```
